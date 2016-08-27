@@ -1,0 +1,143 @@
+---
+title: "Can good excercise bepredicted?"
+author: "Derik Castillo-Guajardo"
+date: "August 26, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+```{r}
+#loadin of the libraries and definition of a function I will need for a figure. #Sorry for the length.
+library(ggplot2)
+library(caret)
+library(rattle)
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+# Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively.  One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal was to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways, as follows: Exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+
+The goal of this project was to predict the manner in which they did the exercise. how you built your model, 
+how you used cross validation, 
+what you think the expected out of sample error is, 
+and why you made the choices you did. 
+You will also use your prediction model to predict 20 different test cases.
+
+### Loading the data
+```{r}
+training<-read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",na.strings = c("NA","#DIV/0!",""))
+testing<-read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",na.strings = c("NA","#DIV/0!",""))
+```
+
+## Exploratory analysis
+
+Some of the variables do seem to separate the classes relatively well, while others do not separate the response variable. In order to find out which variables are best to separate the classes, as show in the following figure.
+
+
+```{r}
+g1<-ggplot(training, aes(x=pitch_arm, y=yaw_arm, color=classe))+geom_point()
+#g1
+g2<-ggplot(training, aes(x=yaw_belt, y=pitch_belt, color=classe))+geom_point()
+#g2
+g3<-ggplot(training, aes(x=amplitude_pitch_forearm,y=amplitude_pitch_dumbbell, color=classe))+geom_point()
+#g3
+g4<-ggplot(training, aes(x=total_accel_belt, y=accel_belt_z, color=classe))+geom_point()
+#g4
+multiplot(g1,g2,g3,g4,cols=2)
+``` 
+ 
+From the paper, we can see that te variables can be divided into two classes. One is the basic variables, corresponding to direct readings from the instruments. Derived variables are averages, variances, etc. These variables correspond to a single time window but are in a column with many NA values. This does not mean there are missing values, but that a single mean is computed for each time  window. Since the in the testing data frame all derived measurements are NA values, that is all of them are missing, it is pointless to include them in the train data set. They will be removed also in the testing set
+
+```{r}
+#remove derived measures in the training data set
+training<-training[,setdiff(1:160,c(12:36,50:59,69:83,87:101,103:112,125:139,141:150))]
+testing<-testing[,setdiff(1:160,c(12:36,50:59,69:83,87:101,103:112,125:139,141:150))]
+```
+
+The first 7 variables are not needed for prediction and were thus eliminated from the data frame. Importantly, the testing data set does not contain the classe variable, that is it does not contain information on the variable I want to predict. Therefore, it will be impossible to do a confusion matrix of th prediction.
+
+```{r}
+training<-training[,8:60]
+```
+
+
+Variables with a lot of missing values can now be identified and discarded.
+
+```{r}
+varelim<-nearZeroVar(training,saveMetrics = T)
+training<-training[,varelim$nzv==F]
+```
+
+# Model construction
+
+The paper obtained results using a random forest, however, this method consumes all of my computer's resources. this is why I opted for a simpler random tree model.
+
+```{r}
+mod.tree<-train(classe~.,method="rpart",data=training)
+fancyRpartPlot(mod.tree$finalModel)
+```
+
+# Cross validation
+
+The simplest form to do cross validation, is to have the training and test sets, as provided. There are more complicated ways, for example k-fold cross validation, or using three data sets (training, testing and validation). In this project, for simplicity, only two datasets were used.
+
+# Prediction
+
+Now I can use the trained model to predict how well the exercise is performed using the testing data set
+
+```{r}
+pred<-predict(mod.tree,newdata = testing)
+pred
+```
+
+It is not possible to do a confusion matrix, because the testing data set does not contain information on the classe variable.
+
+```{r}
+#table(testing$classe,pred)
+#this gives an error
+```
+
+# out of sample error
+
+The out of sample error cannot be calculated since the downloaded testing data set does not contain the classe variable. I double checked and downloaded again, and looked for the varialbe before any transformation.
+
+I think that the out of sample error, measured as the difference between the predicted and real values of the response variable (how well people do dumbbell curls) is not representative, since the testing set has only 20 cases. In order to have a better idea of the error, many more data is needed. With a small sample, the statistics will be biased. 
